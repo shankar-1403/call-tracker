@@ -15,6 +15,10 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList hidden={hideHeader}>
+          {/* Keep login route registered for the navigator */}
+          <TabTrigger name="index" href="/" asChild>
+            <View style={styles.hiddenTrigger} />
+          </TabTrigger>
           <TabTrigger name="dashboard" href="/dashboard" asChild>
             <TabButton>Dashboard</TabButton>
           </TabTrigger>
@@ -114,5 +118,11 @@ const styles = StyleSheet.create({
   logout: {
     color:"red",
     fontSize:12,
-  }
+  },
+  hiddenTrigger: {
+    width: 0,
+    height: 0,
+    overflow: 'hidden',
+    opacity: 0,
+  },
 });

@@ -120,18 +120,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (firebaseUser) => {
+        try {
+          setUser(firebaseUser);
 
-      if (firebaseUser) {
-        await loadProfile(firebaseUser.uid);
-      } else {
+          if (firebaseUser) {
+            await loadProfile(firebaseUser.uid);
+          } else {
+            setProfile(null);
+            setProfileIssue(null);
+          }
+        } catch (error) {
+          console.error("[Auth] Failed to resolve auth state", error);
+          setProfile(null);
+          setProfileIssue("Unable to load session.");
+        } finally {
+          setLoading(false);
+        }
+      },
+      (error) => {
+        console.error("[Auth] onAuthStateChanged error", error);
+        setUser(null);
         setProfile(null);
-        setProfileIssue(null);
+        setLoading(false);
       }
-
-      setLoading(false);
-    });
+    );
 
     return unsubscribe;
   }, [loadProfile]);
