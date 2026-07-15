@@ -33,7 +33,7 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
+  const image = <Image style={styles.image} source={require('../../assets/images/pcred_logo.webp')} />;
 
   return animate ? (
     <Animated.View
@@ -95,16 +95,29 @@ const glowKeyframe = new Keyframe({
   },
 });
 
-export function AnimatedIcon() {
+type AnimatedIconProps = {
+  compact?: boolean;
+};
+
+export function AnimatedIcon({ compact = false }: AnimatedIconProps) {
+  const size = compact ? 96 : 128;
+
   return (
-    <View style={styles.iconContainer}>
+    <View style={[styles.iconContainer, { width: size, height: size }]}>
       <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
-        <Image style={styles.glow} source={require('@/assets/images/logo-glow.png')} />
+        <Image style={styles.glow} source={require('../../assets/images/pcred_logo.webp')} />
       </Animated.View>
 
-      <Animated.View entering={keyframe.duration(DURATION)} style={styles.background} />
+      <Animated.View
+        entering={keyframe.duration(DURATION)}
+        style={[styles.background, { width: size, height: size, borderRadius: size * 0.3 }]}
+      />
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
+        <Image
+          style={[styles.image, compact && styles.imageCompact]}
+          contentFit="contain"
+          source={require('../../assets/images/pcred_logo.webp')}
+        />
       </Animated.View>
     </View>
   );
@@ -128,8 +141,12 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   image: {
+    width: 86,
+    height: 81,
+  },
+  imageCompact: {
     width: 76,
-    height: 71,
+    height: 72,
   },
   background: {
     borderRadius: 40,

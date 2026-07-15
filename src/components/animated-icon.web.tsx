@@ -1,34 +1,24 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View } from 'react-native';
-import Animated, { Keyframe, Easing } from 'react-native-reanimated';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 
-import classes from './animated-icon.module.css';
 const DURATION = 300;
+const LOGO_ASPECT = 180 / 71;
+
+type AnimatedIconProps = {
+  compact?: boolean;
+};
 
 export function AnimatedSplashOverlay() {
   return null;
 }
-
-const keyframe = new Keyframe({
-  0: {
-    transform: [{ scale: 0 }],
-  },
-  60: {
-    transform: [{ scale: 1.2 }],
-    easing: Easing.elastic(1.2),
-  },
-  100: {
-    transform: [{ scale: 1 }],
-    easing: Easing.elastic(1.2),
-  },
-});
 
 const logoKeyframe = new Keyframe({
   0: {
     opacity: 0,
   },
   60: {
-    transform: [{ scale: 1.2 }],
+    transform: [{ scale: 1.1 }],
     opacity: 0,
     easing: Easing.elastic(1.2),
   },
@@ -54,55 +44,47 @@ const glowKeyframe = new Keyframe({
   },
 });
 
-export function AnimatedIcon() {
-  return (
-    <View style={styles.iconContainer}>
-      <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
-        <Image style={styles.glow} source={require('@/assets/images/logo-glow.png')} />
-      </Animated.View>
+export function AnimatedIcon({ compact = false }: AnimatedIconProps) {
+  const { width } = useWindowDimensions();
+  const logoWidth = Math.min(compact ? 160 : 220, width * 0.55);
+  const logoHeight = logoWidth / LOGO_ASPECT;
+  const glowSize = logoWidth * 0.9;
 
-      <Animated.View style={styles.background} entering={keyframe.duration(DURATION)}>
-        <div className={classes.expoLogoBackground} />
+  return (
+    <View style={[styles.iconContainer, { width: logoWidth, height: Math.max(logoHeight, glowSize * 0.55) }]}>
+      <Animated.View
+        entering={glowKeyframe.duration(60 * 1000 * 4)}
+        style={[styles.glow, { width: glowSize, height: glowSize }]}>
+        <Image
+          style={{ width: glowSize, height: glowSize }}
+          source={require('@/assets/images/logo-glow.png')}
+        />
       </Animated.View>
 
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
+        <Image
+          style={{ width: logoWidth, height: logoHeight }}
+          contentFit="contain"
+          source={require('@/assets/images/pcred_logo.webp')}
+        />
       </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    width: '100%',
-    zIndex: 1000,
-    position: 'absolute',
-    top: 128 / 2 + 138,
-  },
   imageContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1,
   },
   glow: {
-    width: 201,
-    height: 201,
     position: 'absolute',
   },
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: 128,
-    height: 128,
-  },
-  image: {
-    position: 'absolute',
-    width: 76,
-    height: 71,
-  },
-  background: {
-    width: 128,
-    height: 128,
-    position: 'absolute',
+    overflow: 'visible',
+    alignSelf: 'center',
   },
 });
