@@ -63,7 +63,7 @@ export function CustomTabList({
       importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}>
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
         <ThemedText type="smallBold" style={styles.brandText}>
-          Expo Starter
+          Call Tracker
         </ThemedText>
 
         {props.children}
