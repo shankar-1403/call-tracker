@@ -1,10 +1,11 @@
+import { Colors } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
 import { usePathname } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useColorScheme } from 'react-native';
 
-import { Colors } from '@/constants/theme';
-
 export default function AppTabs() {
+  const {logout} = useAuth();
   const pathname = usePathname();
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];

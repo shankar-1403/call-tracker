@@ -120,9 +120,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   useEffect(() => {
+     console.log("AuthContext: subscribing");
+
     const unsubscribe = onAuthStateChanged(
       auth,
       async (firebaseUser) => {
+        console.log("onAuthStateChanged fired", firebaseUser?.email);
+
         try {
           setUser(firebaseUser);
 
@@ -137,6 +141,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setProfile(null);
           setProfileIssue("Unable to load session.");
         } finally {
+          console.log("Setting loading false");
           setLoading(false);
         }
       },

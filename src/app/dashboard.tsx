@@ -1,19 +1,24 @@
 
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../context/AuthContext";
 
 const recentCalls = [
-  { id: '1', name: 'Rahul Sharma', number: '+91 98765 43210', status: 'Interested' },
-  { id: '2', name: 'Priya Mehta', number: '+91 91234 56789', status: 'No Answer' },
-  { id: '3', name: 'Amit Verma', number: '+91 99887 66554', status: 'Follow-up' },
+  { id: 1, name: 'Rahul Sharma', number: '+91 98765 43210', status: 'Interested' },
+  { id: 2, name: 'Priya Mehta', number: '+91 91234 56789', status: 'No Answer' },
+  { id: 3, name: 'Amit Verma', number: '+91 99887 66554', status: 'Follow-up' },
 ];
 
 function Dashboard() {
+  const {logout} = useAuth();
+ 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView>
-        <Text style={styles.header}>Dashboard</Text>
-
+        <View style={styles.headerFlex}>
+          <Text style={styles.header}>Dashboard</Text>
+          <TouchableOpacity style={styles.button} onPress={logout} activeOpacity={0.85}><Text style={styles.buttonText}>Logout</Text></TouchableOpacity>
+        </View>
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>24</Text>
@@ -51,7 +56,13 @@ function Dashboard() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F6FA' },
   header: { fontSize: 24, fontWeight: '700', margin: 16, color: '#1A1A1A' },
-
+  headerFlex: 
+    { flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginHorizontal: 16,
+      marginTop: 16,
+    },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -107,6 +118,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#2E5CFF',
+  },
+  button: {
+    backgroundColor: "#208AEF",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buttonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
 export default Dashboard

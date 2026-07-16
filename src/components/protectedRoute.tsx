@@ -18,17 +18,15 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     if (loading) return;
 
-    // Logged out → send to login (unless already there)
     if (!user && !isPublicRoute) {
       router.replace("/");
       return;
     }
 
-    // Logged in on login page → go to app
     if (user && isPublicRoute) {
       router.replace("/dashboard");
     }
-  }, [loading, user, isPublicRoute, router]);
+  }, [loading, user, isPublicRoute, pathname, router]);
 
   if (loading) {
     return (
@@ -45,20 +43,6 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  // Allow login (and other public screens) without a session
-  if (!user && isPublicRoute) {
-    return <>{children}</>;
-  }
-
-  // Waiting for redirect to login
-  if (!user) {
-    return null;
-  }
-
-  // Waiting for redirect away from login
-  if (isPublicRoute) {
-    return null;
-  }
-
+  // Keep the navigator mounted so redirects can complete on native.
   return <>{children}</>;
 }

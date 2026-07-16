@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: 8,
-    color: '#000',
+    color: '#074C70',
   },
   subtitle: {
     textAlign: 'center',
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   button: {
-    backgroundColor: '#208AEF',
+    backgroundColor: '#074C70',
     height: 50,
     width: '100%',
     borderRadius: 12,
