@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "pcred_calling",
-    "slug": "pcred_calling",
+    "name": "Aksh",
+    "slug": "Aksh",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/favicon.jpg",
     "scheme": "pcredcalling",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -12,28 +12,35 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#074C70",
+        "foregroundImage": "./assets/images/favicon.jpg",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.pcred_calling"
+      "package": "com.anonymous.aksh",
+      "permissions": [
+        "android.permission.READ_CALL_LOG",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.READ_PHONE_NUMBERS"
+      ]
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.jpg"
     },
     "plugins": [
+      "react-native-call-detection-android",
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
+          "backgroundColor": "#074C70",
+          "image": "./assets/images/favicon.jpg",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

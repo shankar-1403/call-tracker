@@ -1,14 +1,17 @@
-import { useAuth } from "@/context/AuthContext";
-import { usePathname, useRouter } from "expo-router";
-import { ReactNode, useEffect } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { useAuth } from '@/context/AuthContext';
+import { usePathname, useRouter } from 'expo-router';
+import { ReactNode, useEffect } from 'react';
 
 interface ProtectedRouteProps {
   children: ReactNode;
 }
 
-const PUBLIC_ROUTES = new Set(["/", "/index"]);
+const PUBLIC_ROUTES = new Set(['/', '/index']);
 
+/**
+ * Always keep the navigator mounted (required on native).
+ * Only redirect after auth is ready — never replace the whole tree with a blank/splash view.
+ */
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -16,33 +19,19 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const isPublicRoute = PUBLIC_ROUTES.has(pathname);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading) {
+      return;
+    }
 
     if (!user && !isPublicRoute) {
-      router.replace("/");
+      router.replace('/');
       return;
     }
 
     if (user && isPublicRoute) {
-      router.replace("/dashboard");
+      router.replace('/dashboard');
     }
   }, [loading, user, isPublicRoute, pathname, router]);
 
-  if (loading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: "#000",
-        }}>
-        <ActivityIndicator size="large" color="#208AEF" />
-        <Text style={{ color: "#fff", marginTop: 12 }}>Loading...</Text>
-      </View>
-    );
-  }
-
-  // Keep the navigator mounted so redirects can complete on native.
   return <>{children}</>;
 }

@@ -3,8 +3,9 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,33 +14,30 @@ import {
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
-  const {login} = useAuth();
+  const { login, user, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [formData, setFormData] = useState({email:"",password:""});
   const { width, height } = useWindowDimensions();
-  const handleChange = (e:any) => {
-    const {value,name} = e.target;
-    setFormData((prevFormData)=>({
-      ...prevFormData,
-      [name]:value
-    }))
-  }
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace('/dashboard');
+    }
+  }, [loading, user]);
 
   async function handleSubmit() {
-    setError('')
+    setError('');
     try {
       await login(email.trim(), password);
       router.replace('/dashboard');
-    } catch (err:any) {
-      setError(err.message ?? 'Sign in failed')
-    } finally {
-      console.log("Complete")
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Sign in failed');
     }
   }
 
@@ -47,6 +45,23 @@ export default function LoginScreen() {
   const formMaxWidth = Math.min(420, width - horizontalPadding * 2);
   const isCompact = height < 700 || width < 380;
   const titleSize = isCompact ? 24 : 28;
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color="#208AEF" />
+        <Text style={{ marginTop: 12, color: '#666' }}>Restoring session…</Text>
+      </View>
+    );
+  }
+
+  if (user) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color="#208AEF" />
+      </View>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -73,7 +88,6 @@ export default function LoginScreen() {
                   placeholder="Email"
                   value={email}
                   onChangeText={setEmail}
-                  onChange={handleChange}
                   style={styles.input}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -83,11 +97,12 @@ export default function LoginScreen() {
                 <TextInput
                   placeholder="Password"
                   value={password}
-                  onChange={handleChange}
                   onChangeText={setPassword}
                   style={styles.input}
                   secureTextEntry
                 />
+
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
                 <TouchableOpacity style={styles.button} onPress={handleSubmit} activeOpacity={0.85}>
                   <Text style={styles.buttonText}>Login</Text>
@@ -181,5 +196,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 16,
+  },
+  errorText: {
+    color: '#B00020',
+    marginBottom: 12,
+    textAlign: 'center',
   },
 });

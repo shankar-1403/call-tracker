@@ -1,0 +1,216 @@
+import {
+  analyzeLeads,
+  filterLeads,
+} from '@/services/leadAnalysisService';
+import { loadCallHistory } from '@/services/callLogService';
+import { exportLeadAnalysisToExcel } from '@/services/exportService';
+import {
+  fetchLeadsFromGoogleSheet,
+  isLeadsSheetConfigured,
+  loadLeadsCache,
+} from '@/services/leadsSheetService';
+import type { LeadAnalysisResult, LeadFilter, LeadWithAnalysis } from '@/types/lead';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { InteractionManager } from 'react-native';
+
+export function useLeadAnalysis(enabled: boolean) {
+  const [analysis, setAnalysis] = useState<LeadAnalysisResult | null>(null);
+  const [filter, setFilter] = useState<LeadFilter>('called');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [loadProgress, setLoadProgress] = useState<number | null>(null);
+  const callsRef = useRef<Awaited<ReturnType<typeof loadCallHistory>> | null>(null);
+
+  const applyLeads = useCallback(
+    async (
+      sheetLeads: Awaited<ReturnType<typeof fetchLeadsFromGoogleSheet>>['leads'],
+      sheetHeaders: string[],
+      tabsLoaded: string[],
+      fromCache?: boolean,
+      loadedCount?: number,
+    ) => {
+      if (!callsRef.current) {
+        callsRef.current = await loadCallHistory(300);
+      }
+
+      await new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => resolve());
+      });
+
+      const nextAnalysis = analyzeLeads(sheetLeads, callsRef.current, sheetHeaders);
+      setAnalysis(nextAnalysis);
+
+      const tabsNote =
+        tabsLoaded.length > 0 ? ` across ${tabsLoaded.length} sheet tab(s)` : '';
+      const countLabel = loadedCount ?? nextAnalysis.summary.uniqueLeads;
+
+      setStatusMessage(
+        fromCache
+          ? `Showing cached leads (${nextAnalysis.summary.uniqueLeads} unique). Refreshing…`
+          : `Loaded ${countLabel} sheet rows → ${nextAnalysis.summary.uniqueLeads} unique numbers${tabsNote}. Dialed: ${nextAnalysis.summary.calledCount}.`,
+      );
+    },
+    [],
+  );
+
+  const refreshAnalysis = useCallback(async () => {
+    if (!enabled) {
+      return;
+    }
+
+    if (!isLeadsSheetConfigured()) {
+      setError(
+        'Set EXPO_PUBLIC_GOOGLE_SHEETS_WEBHOOK_URL to the Apps Script /exec URL, then rebuild.',
+      );
+      return;
+    }
+
+    setIsRefreshing(true);
+    setError(null);
+    setLoadProgress(0);
+    setStatusMessage('Refreshing leads from Google Sheet…');
+    callsRef.current = null;
+
+    try {
+      const result = await fetchLeadsFromGoogleSheet(
+        async (partial) => {
+          setLoadProgress(partial.loadedCount);
+          await applyLeads(
+            partial.leads,
+            partial.sheetHeaders,
+            partial.tabsLoaded,
+            false,
+            partial.loadedCount,
+          );
+        },
+        { forceRefresh: true },
+      );
+      await applyLeads(result.leads, result.sheetHeaders, result.tabsLoaded, false);
+      setLoadProgress(null);
+    } catch (refreshError) {
+      console.error('[LeadAnalysis] Refresh failed', refreshError);
+      setError(
+        refreshError instanceof Error
+          ? refreshError.message
+          : 'Failed to load leads from Google Sheets.',
+      );
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      setLoadProgress(null);
+    }
+  }, [enabled, applyLeads]);
+
+  useEffect(() => {
+    if (!enabled || !isLeadsSheetConfigured()) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const cached = await loadLeadsCache();
+        if (!cancelled && cached) {
+          await applyLeads(cached.leads, cached.sheetHeaders, cached.tabsLoaded, true);
+          setIsLoading(false);
+          setIsRefreshing(true);
+        }
+
+        const fresh = await fetchLeadsFromGoogleSheet(async (partial) => {
+          if (cancelled) {
+            return;
+          }
+          setLoadProgress(partial.loadedCount);
+          await applyLeads(
+            partial.leads,
+            partial.sheetHeaders,
+            partial.tabsLoaded,
+            false,
+            partial.loadedCount,
+          );
+          setIsLoading(false);
+          setIsRefreshing(true);
+        });
+
+        if (!cancelled) {
+          await applyLeads(fresh.leads, fresh.sheetHeaders, fresh.tabsLoaded, false);
+          setError(null);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          console.error('[LeadAnalysis] Load failed', loadError);
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Failed to load leads from Google Sheets.',
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+          setLoadProgress(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, applyLeads]);
+
+  const filteredLeads = useMemo<LeadWithAnalysis[]>(() => {
+    if (!analysis) {
+      return [];
+    }
+
+    return filterLeads(analysis.leads, filter);
+  }, [analysis, filter]);
+
+  const exportAnalysis = useCallback(async () => {
+    if (!analysis) {
+      setError('Load lead analysis before exporting.');
+      return;
+    }
+
+    setIsExporting(true);
+    setError(null);
+
+    try {
+      await exportLeadAnalysisToExcel(analysis);
+      setStatusMessage(
+        'Exported dialed numbers only (matched to lead sheet). Open the CSV in Excel.',
+      );
+    } catch (exportError) {
+      console.error('[LeadAnalysis] Export failed', exportError);
+      setError(
+        exportError instanceof Error ? exportError.message : 'Failed to export analysis.',
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  }, [analysis]);
+
+  return {
+    analysis,
+    filteredLeads,
+    filter,
+    setFilter,
+    isLoading,
+    isRefreshingLeads: isRefreshing,
+    isExporting,
+    error,
+    statusMessage,
+    loadProgress,
+    leadsConfigured: isLeadsSheetConfigured(),
+    refreshAnalysis,
+    exportAnalysis,
+  };
+}
