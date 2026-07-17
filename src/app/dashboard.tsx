@@ -107,6 +107,7 @@ export default function Dashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={isRefreshingAll}
@@ -251,8 +252,10 @@ export default function Dashboard() {
 
             <View style={styles.statsGrid}>
               <View style={styles.statCard}>
-                <Text style={styles.statValue}>{summary.totalRows}</Text>
-                <Text style={styles.statLabel}>Sheet Rows</Text>
+                <Text style={styles.statValue}>{summary.incomingCallCount}</Text>
+                <Text style={styles.statLabel}>
+                  Incoming Calls · {formatDuration(summary.incomingDurationSeconds)}
+                </Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statValue}>{summary.uniqueLeads}</Text>

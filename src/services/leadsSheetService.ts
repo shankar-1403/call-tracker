@@ -116,20 +116,46 @@ function isCanceledOrTimeout(error: unknown): boolean {
   );
 }
 
+export function isOfflineError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('unknownhostexception') ||
+    message.includes('unable to resolve host') ||
+    message.includes('network request failed') ||
+    message.includes('no address associated with hostname') ||
+    message.includes('software caused connection abort') ||
+    message.includes('failed to connect')
+  );
+}
+
 /**
  * Avoid AbortController on React Native — aborting often surfaces as
  * "Fetch request has been canceled" and breaks Apps Script cold starts.
  */
 async function fetchJson<T>(url: string, timeoutMs: number): Promise<T> {
   const fetchPromise = (async () => {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
+      });
+    } catch (networkError) {
+      if (isOfflineError(networkError)) {
+        throw new Error(
+          'No internet connection. Check Wi-Fi or mobile data, then pull to refresh.',
+        );
+      }
+      throw networkError;
+    }
 
     const body = await response.text();
 

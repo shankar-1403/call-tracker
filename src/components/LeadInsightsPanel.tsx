@@ -5,8 +5,11 @@ import {
   formatMinutes,
   getDateRangePreset,
   getLeadSheetStatus,
+  type DateRange,
   type DateRangePreset,
 } from '@/utils/leadInsights';
+import { MaterialIcons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
@@ -15,6 +18,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -30,6 +34,7 @@ const DATE_PRESETS: Array<{ id: DateRangePreset; label: string }> = [
   { id: '7d', label: '7 days' },
   { id: '30d', label: '30 days' },
   { id: 'month', label: 'This month' },
+  { id: 'custom', label: 'Custom' },
 ];
 
 const SHEET_STATUS_COLORS = [
@@ -131,9 +136,54 @@ function formatCallTime(timestamp: number | null): string {
   return new Date(timestamp).toLocaleString();
 }
 
+function formatDateInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${day}/${month}/${year}`;
+}
+
+function parseDateInput(value: string, endOfDate = false): number | null {
+  const match = value.trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (!match) {
+    return null;
+  }
+
+  const day = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const year = Number(match[3]);
+  const date = new Date(year, month, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  date.setHours(endOfDate ? 23 : 0, endOfDate ? 59 : 0, endOfDate ? 59 : 0, endOfDate ? 999 : 0);
+  return date.getTime();
+}
+
 export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
   const [sheetStatusFilter, setSheetStatusFilter] = useState<string>('Active');
   const [datePreset, setDatePreset] = useState<DateRangePreset>('all');
+  const today = new Date();
+  const [customFrom, setCustomFrom] = useState(() =>
+    formatDateInput(new Date(today.getFullYear(), today.getMonth(), 1)),
+  );
+  const [customTo, setCustomTo] = useState(() => formatDateInput(today));
+  const [customDateError, setCustomDateError] = useState<string | null>(null);
+  const [customDateRange, setCustomDateRange] = useState<DateRange>(() => ({
+    preset: 'custom',
+    from: new Date(today.getFullYear(), today.getMonth(), 1).setHours(0, 0, 0, 0),
+    to: new Date(today.getFullYear(), today.getMonth(), today.getDate()).setHours(
+      23,
+      59,
+      59,
+      999,
+    ),
+  }));
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [listLimit, setListLimit] = useState(30);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
@@ -147,7 +197,10 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
   });
   const dropdownTriggerRef = useRef<View>(null);
 
-  const dateRange = useMemo(() => getDateRangePreset(datePreset), [datePreset]);
+  const dateRange = useMemo(
+    () => (datePreset === 'custom' ? customDateRange : getDateRangePreset(datePreset)),
+    [datePreset, customDateRange],
+  );
   const selectedSheetStatusLabel =
     SHEET_STATUS_OPTIONS.find((item) => item.id === sheetStatusFilter)?.label ??
     'All statuses';
@@ -177,6 +230,46 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
     setSheetStatusFilter(next);
     setListLimit(30);
     setStatusDropdownOpen(false);
+  };
+
+  const [datePickerTarget, setDatePickerTarget] = useState<'from' | 'to' | null>(null);
+
+  const datePickerValue = useMemo(() => {
+    const source = datePickerTarget === 'to' ? customTo : customFrom;
+    const parsed = parseDateInput(source);
+    return parsed != null ? new Date(parsed) : new Date();
+  }, [datePickerTarget, customFrom, customTo]);
+
+  const onDatePicked = (eventType: string, selected?: Date) => {
+    setDatePickerTarget(null);
+    if (eventType !== 'set' || !selected || !datePickerTarget) {
+      return;
+    }
+    const formatted = formatDateInput(selected);
+    if (datePickerTarget === 'from') {
+      setCustomFrom(formatted);
+    } else {
+      setCustomTo(formatted);
+    }
+    setCustomDateError(null);
+  };
+
+  const applyCustomDateRange = () => {
+    const from = parseDateInput(customFrom);
+    const to = parseDateInput(customTo, true);
+
+    if (from == null || to == null) {
+      setCustomDateError('Enter valid dates in DD/MM/YYYY format.');
+      return;
+    }
+    if (from > to) {
+      setCustomDateError('From date must be before or equal to To date.');
+      return;
+    }
+
+    setCustomDateError(null);
+    setCustomDateRange({ preset: 'custom', from, to });
+    setListLimit(30);
   };
 
   // Details + charts follow sheet Status (+ date), not call result
@@ -212,6 +305,16 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
   const total = filtered.length;
   const dialed = filtered.filter((lead) => lead.status !== 'not_called').length;
   const connected = filtered.filter((lead) => lead.status === 'connected').length;
+  const incomingCalls = filtered.reduce((sum, lead) => sum + lead.incomingCallCount, 0);
+  const incomingSeconds = filtered.reduce(
+    (sum, lead) => sum + lead.incomingDurationSeconds,
+    0,
+  );
+  const outgoingCalls = filtered.reduce((sum, lead) => sum + lead.outgoingCallCount, 0);
+  const outgoingSeconds = filtered.reduce(
+    (sum, lead) => sum + lead.outgoingDurationSeconds,
+    0,
+  );
   const talkSeconds = filtered.reduce((sum, lead) => sum + lead.totalDurationSeconds, 0);
   const connectionRate = dialed > 0 ? Math.round((connected / dialed) * 100) : 0;
 
@@ -231,7 +334,10 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
           <TouchableOpacity
             key={item.id}
             style={[styles.chip, datePreset === item.id && styles.chipActive]}
-            onPress={() => setDatePreset(item.id)}
+            onPress={() => {
+              setDatePreset(item.id);
+              setListLimit(30);
+            }}
             activeOpacity={0.85}>
             <Text style={[styles.chipText, datePreset === item.id && styles.chipTextActive]}>
               {item.label}
@@ -239,6 +345,66 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {datePreset === 'custom' ? (
+        <View style={styles.customDateCard}>
+          <View style={styles.customDateRow}>
+            <View style={styles.customDateField}>
+              <Text style={styles.customDateLabel}>From</Text>
+              <View style={styles.customDateInputRow}>
+                <TextInput
+                  value={customFrom}
+                  onChangeText={setCustomFrom}
+                  placeholder="DD/MM/YYYY"
+                  keyboardType="numbers-and-punctuation"
+                  style={styles.customDateInput}
+                />
+                <TouchableOpacity
+                  style={styles.calendarButton}
+                  onPress={() => setDatePickerTarget('from')}
+                  activeOpacity={0.85}>
+                  <MaterialIcons name="calendar-today" size={18} color="#074C70" />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.customDateField}>
+              <Text style={styles.customDateLabel}>To</Text>
+              <View style={styles.customDateInputRow}>
+                <TextInput
+                  value={customTo}
+                  onChangeText={setCustomTo}
+                  placeholder="DD/MM/YYYY"
+                  keyboardType="numbers-and-punctuation"
+                  style={styles.customDateInput}
+                />
+                <TouchableOpacity
+                  style={styles.calendarButton}
+                  onPress={() => setDatePickerTarget('to')}
+                  activeOpacity={0.85}>
+                  <MaterialIcons name="calendar-today" size={18} color="#074C70" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+          {datePickerTarget ? (
+            <DateTimePicker
+              value={datePickerValue}
+              mode="date"
+              display="calendar"
+              onChange={(event, selected) => onDatePicked(event.type, selected)}
+            />
+          ) : null}
+          {customDateError ? (
+            <Text style={styles.customDateError}>{customDateError}</Text>
+          ) : null}
+          <TouchableOpacity
+            style={styles.customDateApply}
+            onPress={applyCustomDateRange}
+            activeOpacity={0.85}>
+            <Text style={styles.customDateApplyText}>Apply date range</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <Text style={styles.filterLabel}>Sheet status</Text>
       <View ref={dropdownTriggerRef} collapsable={false} style={styles.dropdownWrap}>
@@ -260,7 +426,7 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
         onRequestClose={() => setStatusDropdownOpen(false)}>
         <View style={styles.dropdownOverlay}>
           <Pressable
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             onPress={() => setStatusDropdownOpen(false)}
           />
           <View
@@ -317,8 +483,18 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
           <Text style={styles.statLabel}>Connect</Text>
         </View>
         <View style={styles.statBox}>
+          <Text style={styles.statValue}>Leads: {incomingCalls}</Text>
+          <Text style={styles.statDuration}>Duration: {formatMinutes(incomingSeconds)}</Text>
+          <Text style={styles.statLabel}>Incoming calls & duration</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>Leads: {outgoingCalls}</Text>
+          <Text style={styles.statDuration}>Duration:{formatMinutes(outgoingSeconds)}</Text>
+          <Text style={styles.statLabel}>Outgoing calls & duration</Text>
+        </View>
+        <View style={styles.statBox}>
           <Text style={styles.statValue}>{formatMinutes(talkSeconds)}</Text>
-          <Text style={styles.statLabel}>Talk time</Text>
+          <Text style={styles.statLabel}>Total talk time</Text>
         </View>
       </View>
 
@@ -522,6 +698,68 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#FFFFFF',
   },
+  customDateCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: -4,
+    marginBottom: 14,
+  },
+  customDateRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  customDateField: {
+    flex: 1,
+  },
+  customDateLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#667085',
+    marginBottom: 6,
+  },
+  customDateInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  customDateInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    color: '#1A1A1A',
+    fontSize: 14,
+  },
+  calendarButton: {
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customDateError: {
+    color: '#D92D20',
+    fontSize: 12,
+    marginTop: 8,
+  },
+  customDateApply: {
+    backgroundColor: '#074C70',
+    borderRadius: 8,
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  customDateApplyText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
   statsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -536,7 +774,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#074C70',
+  },
+  statDuration: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#074C70',
   },

@@ -5,7 +5,7 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 
 const DURATION = 300;
-const LOGO_ASPECT = 180 / 71;
+const LOGO_ASPECT = 230 / 70;
 
 type AnimatedIconProps = {
   compact?: boolean;

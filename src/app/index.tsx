@@ -2,6 +2,7 @@ import { AnimatedIcon } from '@/components/animated-icon';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -22,6 +23,7 @@ export default function LoginScreen() {
   const { login, user, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const { width, height } = useWindowDimensions();
 
@@ -68,7 +70,7 @@ export default function LoginScreen() {
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={[
@@ -84,6 +86,7 @@ export default function LoginScreen() {
                 <Text style={[styles.formTitle, { fontSize: titleSize }]}>Welcome Back</Text>
                 <Text style={styles.subtitle}>Sign in to continue</Text>
 
+                <Text style={styles.label}>Email ID</Text>
                 <TextInput
                   placeholder="Email"
                   value={email}
@@ -94,13 +97,28 @@ export default function LoginScreen() {
                   autoCorrect={false}
                 />
 
-                <TextInput
-                  placeholder="Password"
-                  value={password}
-                  onChangeText={setPassword}
-                  style={styles.input}
-                  secureTextEntry
-                />
+                <Text style={styles.label}>Password</Text>
+                <View style={styles.passwordWrap}>
+                  <TextInput
+                    placeholder="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    style={styles.passwordInput}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword((visible) => !visible)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <MaterialIcons
+                      name={showPassword ? 'visibility-off' : 'visibility'}
+                      size={22}
+                      color="#667085"
+                    />
+                  </TouchableOpacity>
+                </View>
 
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -109,6 +127,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </ThemedView>
             </ThemedView>
+            <Text style={styles.version}>Version 1.0.0</Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -134,6 +153,12 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
     width: '100%',
+  },
+  label: {
+    fontSize:16,
+    fontWeight:"bold",
+    marginTop:10,
+    color: '#074C70',
   },
   scrollContent: {
     flexGrow: 1,
@@ -184,6 +209,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#000',
   },
+  passwordWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    marginBottom: 16,
+    height: 50,
+  },
+  passwordInput: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: '#000',
+  },
+  eyeButton: {
+    paddingHorizontal: 14,
+    height: '100%',
+    justifyContent: 'center',
+  },
   button: {
     backgroundColor: '#074C70',
     height: 50,
@@ -202,4 +249,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
   },
+  version: {
+    fontSize:14,
+    color:"#ffffff",
+    position:'absolute',
+    bottom:0,
+  }
 });

@@ -4,7 +4,7 @@
     "slug": "Aksh",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/favicon.jpg",
+    "icon": "./assets/images/favicon.png",
     "scheme": "pcredcalling",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -13,11 +13,12 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#074C70",
-        "foregroundImage": "./assets/images/favicon.jpg",
+        "foregroundImage": "./assets/images/favicon.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.anonymous.aksh",
       "permissions": [
         "android.permission.READ_CALL_LOG",
@@ -27,7 +28,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.jpg"
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "react-native-call-detection-android",
@@ -36,11 +37,12 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#074C70",
-          "image": "./assets/images/favicon.jpg",
+          "image": "./assets/images/favicon.png",
           "imageWidth": 76
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -12,7 +12,7 @@ function endOfDay(date: Date): Date {
   return next;
 }
 
-export type DateRangePreset = 'all' | 'today' | '7d' | '30d' | 'month';
+export type DateRangePreset = 'all' | 'today' | '7d' | '30d' | 'month' | 'custom';
 
 export interface DateRange {
   from: number | null;
@@ -191,6 +191,16 @@ export function buildStatusBreakdown(leads: LeadWithAnalysis[]): StatusBreakdown
 }
 
 export function formatMinutes(totalSeconds: number): string {
-  const minutes = Math.round((totalSeconds / 60) * 10) / 10;
-  return `${minutes} min`;
+  const safeSeconds = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours} hr ${minutes} min ${seconds} sec`;
+  }
+  if (minutes > 0) {
+    return `${minutes} min ${seconds} sec`;
+  }
+  return `${seconds} sec`;
 }

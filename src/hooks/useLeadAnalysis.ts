@@ -11,7 +11,17 @@ import {
 } from '@/services/leadsSheetService';
 import type { LeadAnalysisResult, LeadFilter, LeadWithAnalysis } from '@/types/lead';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { InteractionManager } from 'react-native';
+
+/** Yield to the UI thread before heavy work (InteractionManager is deprecated). */
+function waitForIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => resolve(), { timeout: 500 });
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
 
 export function useLeadAnalysis(enabled: boolean) {
   const [analysis, setAnalysis] = useState<LeadAnalysisResult | null>(null);
@@ -36,9 +46,7 @@ export function useLeadAnalysis(enabled: boolean) {
         callsRef.current = await loadCallHistory(300);
       }
 
-      await new Promise<void>((resolve) => {
-        InteractionManager.runAfterInteractions(() => resolve());
-      });
+      await waitForIdle();
 
       const nextAnalysis = analyzeLeads(sheetLeads, callsRef.current, sheetHeaders);
       setAnalysis(nextAnalysis);

@@ -7,7 +7,7 @@ type AnimatedIconProps = {
 };
 
 export function AnimatedIcon({ compact = false }: AnimatedIconProps) {
-  const size = compact ? 96 : 128;
+  const size = compact ? 140 : 190;
 
   return (
     <View style={[styles.iconContainer, { width: size, height: size }]}>
@@ -31,17 +31,17 @@ const styles = StyleSheet.create({
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: 128,
-    height: 128,
+    width: 150,
+    height: 150,
     zIndex: 100,
   },
   image: {
-    width: 120,
-    height: 100,
+    width: 180,
+    height: 150,
   },
   imageCompact: {
-    width: 76,
-    height: 72,
+    width: 130,
+    height: 110,
   },
   background: {
     borderRadius: 40,

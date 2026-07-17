@@ -14,6 +14,10 @@ export interface SheetLead {
 export interface LeadWithAnalysis extends SheetLead {
   status: LeadCallStatus;
   callCount: number;
+  incomingCallCount: number;
+  incomingDurationSeconds: number;
+  outgoingCallCount: number;
+  outgoingDurationSeconds: number;
   connectedCount: number;
   missedCount: number;
   totalDurationSeconds: number;
@@ -26,6 +30,10 @@ export interface LeadAnalysisSummary {
   totalRows: number;
   uniqueLeads: number;
   duplicateRows: number;
+  incomingCallCount: number;
+  incomingDurationSeconds: number;
+  outgoingCallCount: number;
+  outgoingDurationSeconds: number;
   calledCount: number;
   notCalledCount: number;
   connectedCount: number;

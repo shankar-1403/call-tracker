@@ -13,6 +13,14 @@ function isConnectedCall(call: StoredCallRecord): boolean {
   return call.durationSeconds > 0 && call.callType !== 'MISSED' && call.callType !== 'REJECTED';
 }
 
+function isIncomingCall(call: StoredCallRecord): boolean {
+  return call.callType.toUpperCase() === 'INCOMING';
+}
+
+function isOutgoingCall(call: StoredCallRecord): boolean {
+  return call.callType.toUpperCase() === 'OUTGOING';
+}
+
 function getLeadStatus(calls: StoredCallRecord[]): LeadCallStatus {
   if (calls.length === 0) {
     return 'not_called';
@@ -83,9 +91,17 @@ function buildSummary(
   let connectedCount = 0;
   let missedCount = 0;
   let notCalledCount = 0;
+  let incomingCallCount = 0;
+  let incomingDurationSeconds = 0;
+  let outgoingCallCount = 0;
+  let outgoingDurationSeconds = 0;
   let totalTalkTimeSeconds = 0;
 
   for (const lead of uniqueLeads) {
+    incomingCallCount += lead.incomingCallCount;
+    incomingDurationSeconds += lead.incomingDurationSeconds;
+    outgoingCallCount += lead.outgoingCallCount;
+    outgoingDurationSeconds += lead.outgoingDurationSeconds;
     totalTalkTimeSeconds += lead.totalDurationSeconds;
     if (lead.status === 'not_called') {
       notCalledCount += 1;
@@ -105,6 +121,10 @@ function buildSummary(
     totalRows,
     uniqueLeads: uniqueLeads.length,
     duplicateRows,
+    incomingCallCount,
+    incomingDurationSeconds,
+    outgoingCallCount,
+    outgoingDurationSeconds,
     calledCount,
     notCalledCount,
     connectedCount,
@@ -182,6 +202,8 @@ export function analyzeLeads(
 
   const analyzedLeads: LeadWithAnalysis[] = uniqueLeads.map((lead) => {
     const matchedCalls = getCallsForLeadFromIndex(lead, callIndex);
+    const incomingCalls = matchedCalls.filter(isIncomingCall);
+    const outgoingCalls = matchedCalls.filter(isOutgoingCall);
     const connectedCalls = matchedCalls.filter(isConnectedCall);
     const missedCalls = matchedCalls.filter((call) => call.callType === 'MISSED');
     const lastCall = matchedCalls[0] ?? null;
@@ -190,6 +212,16 @@ export function analyzeLeads(
       ...lead,
       status: getLeadStatus(matchedCalls),
       callCount: matchedCalls.length,
+      incomingCallCount: incomingCalls.length,
+      incomingDurationSeconds: incomingCalls.reduce(
+        (total, call) => total + call.durationSeconds,
+        0,
+      ),
+      outgoingCallCount: outgoingCalls.length,
+      outgoingDurationSeconds: outgoingCalls.reduce(
+        (total, call) => total + call.durationSeconds,
+        0,
+      ),
       connectedCount: connectedCalls.length,
       missedCount: missedCalls.length,
       totalDurationSeconds: matchedCalls.reduce(
