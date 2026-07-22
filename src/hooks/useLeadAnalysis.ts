@@ -9,6 +9,7 @@ import {
   isLeadsSheetConfigured,
   loadLeadsCache,
 } from '@/services/leadsSheetService';
+import { resolveActiveSheetConfig } from '@/services/sheetsConfigService';
 import type { LeadAnalysisResult, LeadFilter, LeadWithAnalysis } from '@/types/lead';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -41,6 +42,7 @@ export function useLeadAnalysis(enabled: boolean) {
       tabsLoaded: string[],
       fromCache?: boolean,
       loadedCount?: number,
+      sheetHeading?: string,
     ) => {
       if (!callsRef.current) {
         callsRef.current = await loadCallHistory(300);
@@ -54,11 +56,12 @@ export function useLeadAnalysis(enabled: boolean) {
       const tabsNote =
         tabsLoaded.length > 0 ? ` across ${tabsLoaded.length} sheet tab(s)` : '';
       const countLabel = loadedCount ?? nextAnalysis.summary.uniqueLeads;
+      const sheetNote = sheetHeading ? ` · ${sheetHeading}` : '';
 
       setStatusMessage(
         fromCache
-          ? `Showing cached leads (${nextAnalysis.summary.uniqueLeads} unique). Refreshing…`
-          : `Loaded ${countLabel} sheet rows → ${nextAnalysis.summary.uniqueLeads} unique numbers${tabsNote}. Dialed: ${nextAnalysis.summary.calledCount}.`,
+          ? `Showing cached leads (${nextAnalysis.summary.uniqueLeads} unique)${sheetNote}. Refreshing…`
+          : `Loaded ${countLabel} sheet rows → ${nextAnalysis.summary.uniqueLeads} unique numbers${tabsNote}${sheetNote}. Dialed: ${nextAnalysis.summary.calledCount}.`,
       );
     },
     [],
@@ -92,11 +95,19 @@ export function useLeadAnalysis(enabled: boolean) {
             partial.tabsLoaded,
             false,
             partial.loadedCount,
+            partial.sheetHeading,
           );
         },
         { forceRefresh: true },
       );
-      await applyLeads(result.leads, result.sheetHeaders, result.tabsLoaded, false);
+      await applyLeads(
+        result.leads,
+        result.sheetHeaders,
+        result.tabsLoaded,
+        false,
+        undefined,
+        result.sheetHeading,
+      );
       setLoadProgress(null);
     } catch (refreshError) {
       console.error('[LeadAnalysis] Refresh failed', refreshError);
@@ -125,8 +136,32 @@ export function useLeadAnalysis(enabled: boolean) {
 
       try {
         const cached = await loadLeadsCache();
-        if (!cancelled && cached) {
-          await applyLeads(cached.leads, cached.sheetHeaders, cached.tabsLoaded, true);
+        let useCache = Boolean(cached?.leads?.length);
+        if (useCache && cached) {
+          try {
+            const active = await resolveActiveSheetConfig();
+            const activeId = active?.sheet_link_id;
+            if (
+              activeId &&
+              cached.spreadsheetId &&
+              cached.spreadsheetId !== activeId
+            ) {
+              useCache = false;
+            }
+          } catch {
+            // Keep cache if Firebase sheet lookup fails offline.
+          }
+        }
+
+        if (!cancelled && useCache && cached) {
+          await applyLeads(
+            cached.leads,
+            cached.sheetHeaders,
+            cached.tabsLoaded,
+            true,
+            undefined,
+            cached.sheetHeading,
+          );
           setIsLoading(false);
           setIsRefreshing(true);
         }
@@ -142,13 +177,21 @@ export function useLeadAnalysis(enabled: boolean) {
             partial.tabsLoaded,
             false,
             partial.loadedCount,
+            partial.sheetHeading,
           );
           setIsLoading(false);
           setIsRefreshing(true);
         });
 
         if (!cancelled) {
-          await applyLeads(fresh.leads, fresh.sheetHeaders, fresh.tabsLoaded, false);
+          await applyLeads(
+            fresh.leads,
+            fresh.sheetHeaders,
+            fresh.tabsLoaded,
+            false,
+            undefined,
+            fresh.sheetHeading,
+          );
           setError(null);
         }
       } catch (loadError) {

@@ -1,6 +1,6 @@
 import type { LeadCallStatus, LeadWithAnalysis } from '@/types/lead';
-import { SHEET_LEAD_STATUSES } from '@/types/lead';
 import {
+  collectSheetStatusOptions,
   filterLeadsForInsights,
   formatMinutes,
   getDateRangePreset,
@@ -10,7 +10,7 @@ import {
 } from '@/utils/leadInsights';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   Modal,
@@ -22,11 +22,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-
-const SHEET_STATUS_OPTIONS: Array<{ id: string; label: string }> = [
-  { id: 'all', label: 'All statuses' },
-  ...SHEET_LEAD_STATUSES.map((status) => ({ id: status, label: status })),
-];
 
 const DATE_PRESETS: Array<{ id: DateRangePreset; label: string }> = [
   { id: 'all', label: 'All time' },
@@ -50,26 +45,33 @@ const SHEET_STATUS_COLORS = [
   '#BFC9CA',
   '#6C3483',
   '#AEB6BF',
-  '#F5B7B1',
   '#148F77',
-  '#F5B7B1',
   '#566573',
   '#D5D8DC',
-  '#F5B7B1',
-  '#566573',
-  '#D7BDE2',
   '#1ABC9C',
   '#6E2C00',
+  '#2980B9',
+  '#E67E22',
+  '#16A085',
 ];
 
-function getSheetStatusColor(status: string): string {
-  const index = SHEET_LEAD_STATUSES.findIndex(
+function hashStatusColor(status: string): string {
+  let hash = 0;
+  const value = status.toLowerCase();
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return SHEET_STATUS_COLORS[hash % SHEET_STATUS_COLORS.length];
+}
+
+function getSheetStatusColor(status: string, knownStatuses: string[] = []): string {
+  const index = knownStatuses.findIndex(
     (item) => item.toLowerCase() === status.toLowerCase(),
   );
   if (index >= 0) {
     return SHEET_STATUS_COLORS[index % SHEET_STATUS_COLORS.length];
   }
-  return '#98A2B3';
+  return hashStatusColor(status);
 }
 
 const DETAIL_FIELDS = [
@@ -98,6 +100,42 @@ const DETAIL_FIELDS = [
   'what_is_your_loan_requirement?',
   'Sheet Tab',
 ] as const;
+
+const HIDDEN_DETAIL_KEYS = new Set(['Sheet Tab']);
+
+/** Prefer known MSME fields, then any other columns present on this sheet. */
+function buildDetailRows(lead: LeadWithAnalysis): Array<{ field: string; value: string }> {
+  const seen = new Set<string>();
+  const rows: Array<{ field: string; value: string }> = [];
+
+  for (const field of DETAIL_FIELDS) {
+    const value = getRawField(lead, field);
+    if (!value) {
+      continue;
+    }
+    const actualKey =
+      Object.keys(lead.raw).find((key) => key.toLowerCase() === field.toLowerCase()) ?? field;
+    if (seen.has(actualKey.toLowerCase())) {
+      continue;
+    }
+    seen.add(actualKey.toLowerCase());
+    rows.push({ field: actualKey, value });
+  }
+
+  for (const [field, rawValue] of Object.entries(lead.raw)) {
+    if (!field || HIDDEN_DETAIL_KEYS.has(field) || seen.has(field.toLowerCase())) {
+      continue;
+    }
+    const value = String(rawValue || '').trim();
+    if (!value) {
+      continue;
+    }
+    seen.add(field.toLowerCase());
+    rows.push({ field, value });
+  }
+
+  return rows;
+}
 
 interface LeadInsightsPanelProps {
   leads: LeadWithAnalysis[];
@@ -166,7 +204,7 @@ function parseDateInput(value: string, endOfDate = false): number | null {
 }
 
 export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
-  const [sheetStatusFilter, setSheetStatusFilter] = useState<string>('Active');
+  const [sheetStatusFilter, setSheetStatusFilter] = useState<string>('all');
   const [datePreset, setDatePreset] = useState<DateRangePreset>('all');
   const today = new Date();
   const [customFrom, setCustomFrom] = useState(() =>
@@ -197,18 +235,40 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
   });
   const dropdownTriggerRef = useRef<View>(null);
 
+  const sheetStatuses = useMemo(() => collectSheetStatusOptions(leads), [leads]);
+
+  const sheetStatusOptions = useMemo(
+    () => [
+      { id: 'all', label: 'All statuses' },
+      ...sheetStatuses.map((status) => ({ id: status, label: status })),
+    ],
+    [sheetStatuses],
+  );
+
+  useEffect(() => {
+    if (sheetStatusFilter === 'all') {
+      return;
+    }
+    const stillValid = sheetStatuses.some(
+      (status) => status.toLowerCase() === sheetStatusFilter.toLowerCase(),
+    );
+    if (!stillValid) {
+      setSheetStatusFilter('all');
+    }
+  }, [sheetStatuses, sheetStatusFilter]);
+
   const dateRange = useMemo(
     () => (datePreset === 'custom' ? customDateRange : getDateRangePreset(datePreset)),
     [datePreset, customDateRange],
   );
   const selectedSheetStatusLabel =
-    SHEET_STATUS_OPTIONS.find((item) => item.id === sheetStatusFilter)?.label ??
+    sheetStatusOptions.find((item) => item.id === sheetStatusFilter)?.label ??
     'All statuses';
 
   const openStatusDropdown = () => {
     dropdownTriggerRef.current?.measureInWindow((x, y, width, height) => {
       const screen = Dimensions.get('window');
-      const estimatedMenuHeight = Math.min(SHEET_STATUS_OPTIONS.length * 44 + 8, 360);
+      const estimatedMenuHeight = Math.min(sheetStatusOptions.length * 44 + 8, 360);
       const spaceBelow = screen.height - (y + height) - 12;
       const spaceAbove = y - 12;
       const openUpward = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow;
@@ -296,10 +356,10 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
       .map(([status, count]) => ({
         status,
         count,
-        color: getSheetStatusColor(status),
+        color: getSheetStatusColor(status, sheetStatuses),
       }))
       .sort((a, b) => b.count - a.count);
-  }, [filtered]);
+  }, [filtered, sheetStatuses]);
 
   const maxCount = Math.max(1, ...sheetBreakdown.map((item) => item.count));
   const total = filtered.length;
@@ -445,12 +505,12 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
               bounces={false}
               nestedScrollEnabled
               keyboardShouldPersistTaps="handled">
-              {SHEET_STATUS_OPTIONS.map((item, index) => (
+              {sheetStatusOptions.map((item, index) => (
                 <TouchableOpacity
                   key={item.id}
                   style={[
                     styles.dropdownOption,
-                    index === SHEET_STATUS_OPTIONS.length - 1 && styles.dropdownOptionLast,
+                    index === sheetStatusOptions.length - 1 && styles.dropdownOptionLast,
                     sheetStatusFilter === item.id && styles.dropdownOptionActive,
                   ]}
                   activeOpacity={0.85}
@@ -511,10 +571,15 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
                 style={styles.barRow}
                 activeOpacity={0.8}
                 onPress={() => {
-                  const known = SHEET_LEAD_STATUSES.find(
+                  if (item.status === 'No status') {
+                    setSheetStatusFilter('all');
+                    return;
+                  }
+                  const known = sheetStatuses.find(
                     (status) => status.toLowerCase() === item.status.toLowerCase(),
                   );
-                  setSheetStatusFilter(known ?? 'all');
+                  setSheetStatusFilter(known ?? item.status);
+                  setListLimit(30);
                 }}>
                 <View style={styles.barLabelCol}>
                   <Text style={styles.barLabel}>{item.status}</Text>
@@ -559,10 +624,7 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
           const city = getRawField(lead, 'city');
           const sheetStatus = getLeadSheetStatus(lead) || 'No status';
           const sheetTab = lead.sheetName || getRawField(lead, 'Sheet Tab');
-          const detailRows = DETAIL_FIELDS.map((field) => ({
-            field,
-            value: getRawField(lead, field),
-          })).filter((row) => row.value);
+          const detailRows = buildDetailRows(lead);
 
           return (
             <TouchableOpacity
@@ -593,7 +655,7 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
                 <View
                   style={[
                     styles.statusBadge,
-                    { backgroundColor: getSheetStatusColor(sheetStatus) },
+                    { backgroundColor: getSheetStatusColor(sheetStatus, sheetStatuses) },
                   ]}>
                   <Text style={styles.statusBadgeText} numberOfLines={2}>
                     {sheetStatus}

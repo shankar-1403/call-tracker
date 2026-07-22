@@ -127,7 +127,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </ThemedView>
             </ThemedView>
-            <Text style={styles.version}>Version 1.0.0</Text>
+            <Text style={styles.version}>Version 1.0.1</Text>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>

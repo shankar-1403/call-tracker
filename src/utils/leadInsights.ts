@@ -132,6 +132,31 @@ export function getLeadSheetStatus(lead: LeadWithAnalysis): string {
   return match?.[1]?.trim() ?? '';
 }
 
+/**
+ * Unique Status column values from the loaded sheet (case-insensitive de-dupe, first spelling wins).
+ */
+export function collectSheetStatusOptions(leads: LeadWithAnalysis[]): string[] {
+  const byLower = new Map<string, string>();
+
+  for (const lead of leads) {
+    if (lead.isDuplicate) {
+      continue;
+    }
+    const status = getLeadSheetStatus(lead);
+    if (!status) {
+      continue;
+    }
+    const key = status.toLowerCase();
+    if (!byLower.has(key)) {
+      byLower.set(key, status);
+    }
+  }
+
+  return Array.from(byLower.values()).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  );
+}
+
 export function leadMatchesSheetStatus(
   lead: LeadWithAnalysis,
   sheetStatus: string,

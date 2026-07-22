@@ -214,9 +214,11 @@ export default function Dashboard() {
         {isAndroid && permissionsGranted && !leadsConfigured ? (
           <View style={styles.warningBanner}>
             <Text style={styles.warningText}>
-              Add EXPO_PUBLIC_GOOGLE_SHEETS_WEBHOOK_URL (/exec) in .env. Leave
+              Add EXPO_PUBLIC_GOOGLE_SHEETS_WEBHOOK_URL (/exec) in .env. Activate a
+              sheet in aksh-admin so the app loads that Google Sheet. Leave
               EXPO_PUBLIC_GOOGLE_SHEETS_LEADS_GID empty to load every sheet tab.
-              Deploy Apps Script as Execute as: Me, Who has access: Anyone.
+              Redeploy Apps Script after updating Code.gs (Execute as: Me, access:
+              Anyone).
             </Text>
           </View>
         ) : null}

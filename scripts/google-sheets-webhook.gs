@@ -4,9 +4,12 @@
  * Deploy as Web app: Execute as Me, Who has access Anyone (ANYONE_ANONYMOUS).
  *
  * Endpoints:
- *   ?action=tabs
- *   ?action=leads&all=0&gid=GID&slim=1   ← preferred (small payload)
- *   ?action=leads&all=1&slim=1
+ *   ?action=tabs&spreadsheetId=ID
+ *   ?action=leads&all=0&gid=GID&slim=1&spreadsheetId=ID   ← preferred (small payload)
+ *   ?action=leads&all=1&slim=1&spreadsheetId=ID
+ *
+ * spreadsheetId / sheet_link_id: Google Spreadsheet ID from aksh-admin.
+ * When omitted, falls back to the spreadsheet this script is bound to.
  */
 
 function jsonResponse_(data) {
@@ -15,20 +18,40 @@ function jsonResponse_(data) {
   );
 }
 
-function getSpreadsheet_() {
-  // Ensure sheet reads see the latest saved rows (important right after edits).
+/**
+ * @param {string=} spreadsheetId
+ */
+function getSpreadsheet_(spreadsheetId) {
   SpreadsheetApp.flush();
+  var id = String(spreadsheetId || '').trim();
+  if (id) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (error) {
+      throw new Error(
+        'Could not open spreadsheet "' +
+          id +
+          '". Share it with the Apps Script owner, or check sheet_link_id. ' +
+          String(error),
+      );
+    }
+  }
+
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) {
     throw new Error(
-      'No active spreadsheet. Open Apps Script from Extensions inside the Lead Google Sheet.',
+      'No spreadsheetId provided and no active spreadsheet. Pass spreadsheetId from Firebase sheets, or open Apps Script from Extensions inside the Lead Google Sheet.',
     );
   }
   return spreadsheet;
 }
 
-function getSheetByName_(sheetName) {
-  const spreadsheet = getSpreadsheet_();
+/**
+ * @param {string} sheetName
+ * @param {string=} spreadsheetId
+ */
+function getSheetByName_(sheetName, spreadsheetId) {
+  const spreadsheet = getSpreadsheet_(spreadsheetId);
   const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.getActiveSheet();
   if (!sheet) {
     throw new Error('Sheet not found: ' + sheetName);
@@ -36,8 +59,12 @@ function getSheetByName_(sheetName) {
   return sheet;
 }
 
-function getSheetByGid_(gid) {
-  const spreadsheet = getSpreadsheet_();
+/**
+ * @param {string|number} gid
+ * @param {string=} spreadsheetId
+ */
+function getSheetByGid_(gid, spreadsheetId) {
+  const spreadsheet = getSpreadsheet_(spreadsheetId);
   const sheets = spreadsheet.getSheets();
   for (var i = 0; i < sheets.length; i++) {
     if (sheets[i].getSheetId() === Number(gid)) {
@@ -195,7 +222,7 @@ function resolvePhoneColumn_(headers, values) {
   return detectPhoneColumnFromData_(values);
 }
 
-/** Only these columns are returned in slim mode (keeps 6k+ rows fast). */
+/** Preferred columns for slim payloads; all other non-empty headers are still included. */
 var SLIM_HEADER_CANDIDATES_ = [
   'Date',
   'date',
@@ -228,8 +255,11 @@ function readHeaderRow_(sheet) {
     });
 }
 
-function listLeadTabs_() {
-  var sheets = getSpreadsheet_().getSheets();
+/**
+ * @param {string=} spreadsheetId
+ */
+function listLeadTabs_(spreadsheetId) {
+  var sheets = getSpreadsheet_(spreadsheetId).getSheets();
   var tabs = [];
   var skipped = [];
 
@@ -271,22 +301,35 @@ function listLeadTabs_() {
   return { tabs: tabs, skipped: skipped };
 }
 
+/**
+ * Slim prefers known lead columns first, then appends every other non-empty header
+ * so sheets with different column layouts still return their fields.
+ */
 function getSlimColumnIndexes_(headers) {
   var indexes = [];
   var seen = {};
-  for (var i = 0; i < headers.length; i++) {
-    if (!headers[i]) {
-      continue;
-    }
-    var lower = headers[i].toLowerCase();
-    for (var j = 0; j < SLIM_HEADER_CANDIDATES_.length; j++) {
-      if (lower === SLIM_HEADER_CANDIDATES_[j].toLowerCase() && !seen[i]) {
+
+  for (var j = 0; j < SLIM_HEADER_CANDIDATES_.length; j++) {
+    var candidate = SLIM_HEADER_CANDIDATES_[j].toLowerCase();
+    for (var i = 0; i < headers.length; i++) {
+      if (!headers[i] || seen[i]) {
+        continue;
+      }
+      if (headers[i].toLowerCase() === candidate) {
         seen[i] = true;
         indexes.push(i);
         break;
       }
     }
   }
+
+  for (var k = 0; k < headers.length; k++) {
+    if (headers[k] && !seen[k]) {
+      seen[k] = true;
+      indexes.push(k);
+    }
+  }
+
   return indexes;
 }
 
@@ -404,8 +447,8 @@ function getLeadsFromSheet_(sheet, options) {
   };
 }
 
-function getLeadsFromAllSheets_(options) {
-  var sheets = getSpreadsheet_().getSheets();
+function getLeadsFromAllSheets_(options, spreadsheetId) {
+  var sheets = getSpreadsheet_(spreadsheetId).getSheets();
   var allLeads = [];
   var headers = [];
   var tabs = [];
@@ -437,12 +480,14 @@ function getLeadsFromAllSheets_(options) {
   };
 }
 
-function getLeads_(sheetName, gid, allTabs, options) {
+function getLeads_(sheetName, gid, allTabs, options, spreadsheetId) {
   if (allTabs) {
-    return getLeadsFromAllSheets_(options);
+    return getLeadsFromAllSheets_(options, spreadsheetId);
   }
 
-  var sheet = gid ? getSheetByGid_(gid) : getSheetByName_(sheetName || 'Leads');
+  var sheet = gid
+    ? getSheetByGid_(gid, spreadsheetId)
+    : getSheetByName_(sheetName || 'Leads', spreadsheetId);
   var result = getLeadsFromSheet_(sheet, options);
   if (result.skipped) {
     throw new Error(
@@ -460,15 +505,26 @@ function getLeads_(sheetName, gid, allTabs, options) {
   };
 }
 
+function resolveSpreadsheetId_(e) {
+  if (!e || !e.parameter) {
+    return '';
+  }
+  return String(
+    e.parameter.spreadsheetId || e.parameter.sheet_link_id || '',
+  ).trim();
+}
+
 function doGet(e) {
   try {
     const action = e && e.parameter ? e.parameter.action : '';
+    const spreadsheetId = resolveSpreadsheetId_(e);
 
     if (action === 'tabs') {
-      const listed = listLeadTabs_();
+      const listed = listLeadTabs_(spreadsheetId);
       return jsonResponse_({
         success: true,
         readOnly: true,
+        spreadsheetId: spreadsheetId || null,
         count: listed.tabs.length,
         tabs: listed.tabs,
         skippedTabs: listed.skipped,
@@ -486,13 +542,14 @@ function doGet(e) {
         (!gid && !sheetName && allParam !== '0');
       const slim = slimParam !== '0' && slimParam.toLowerCase() !== 'false';
 
-      const result = getLeads_(sheetName, gid, allTabs, { slim: slim });
+      const result = getLeads_(sheetName, gid, allTabs, { slim: slim }, spreadsheetId);
       return jsonResponse_({
         success: true,
         readOnly: true,
         privateSheet: true,
         slim: slim,
         allTabs: allTabs,
+        spreadsheetId: spreadsheetId || null,
         sheet: allTabs ? 'ALL' : sheetName || null,
         gid: gid || null,
         fetchedAt: new Date().toISOString(),
@@ -510,9 +567,9 @@ function doGet(e) {
       privateSheet: true,
       message: 'Private Lead sheet webhook is live (read-only).',
       endpoints: {
-        tabs: '?action=tabs',
-        oneTabSlim: '?action=leads&all=0&gid=YOUR_GID&slim=1',
-        allTabsSlim: '?action=leads&all=1&slim=1',
+        tabs: '?action=tabs&spreadsheetId=SHEET_ID',
+        oneTabSlim: '?action=leads&all=0&gid=YOUR_GID&slim=1&spreadsheetId=SHEET_ID',
+        allTabsSlim: '?action=leads&all=1&slim=1&spreadsheetId=SHEET_ID',
       },
     });
   } catch (error) {

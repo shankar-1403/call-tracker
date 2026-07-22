@@ -1,6 +1,11 @@
 import type { SheetLead } from '@/types/lead';
 import { normalizePhoneNumber } from '@/utils/phoneNumber';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  extractSpreadsheetId,
+  resolveActiveSheetConfig,
+  type AdminSheetConfig,
+} from '@/services/sheetsConfigService';
 
 const LEADS_CACHE_KEY = '@aksh/leads_cache_v2';
 const TAB_CONCURRENCY = 2;
@@ -70,9 +75,16 @@ export interface FetchLeadsResult {
   sheetHeaders: string[];
   tabsLoaded: string[];
   fromCache?: boolean;
+  /** Spreadsheet opened via Firebase sheet_link_id (or env fallback). */
+  spreadsheetId?: string;
+  sheetHeading?: string;
 }
 
-export type LeadsProgressCallback = ( partial: FetchLeadsResult & { loadedCount: number }) => void;
+export type LeadsProgressCallback = (partial: FetchLeadsResult & { loadedCount: number }) => void;
+
+type SheetFetchContext = {
+  spreadsheetId?: string;
+};
 
 function pickRawValue(raw: Record<string, string>, keys: string[]): string {
   for (const key of keys) {
@@ -331,6 +343,8 @@ export async function loadLeadsCache(): Promise<FetchLeadsResult | null> {
       leads: parsed.leads,
       sheetHeaders: parsed.sheetHeaders ?? [],
       tabsLoaded: parsed.tabsLoaded ?? [],
+      spreadsheetId: parsed.spreadsheetId,
+      sheetHeading: parsed.sheetHeading,
       fromCache: true,
     };
   } catch {
@@ -338,8 +352,22 @@ export async function loadLeadsCache(): Promise<FetchLeadsResult | null> {
   }
 }
 
-async function fetchSingleTab(gid?: string, sheetName?: string): Promise<FetchLeadsResult> {
-  const params: Record<string, string> = { all: '0' };
+function withSpreadsheetParams(
+  params: Record<string, string>,
+  ctx?: SheetFetchContext,
+): Record<string, string> {
+  if (ctx?.spreadsheetId) {
+    return { ...params, spreadsheetId: ctx.spreadsheetId };
+  }
+  return params;
+}
+
+async function fetchSingleTab(
+  gid?: string,
+  sheetName?: string,
+  ctx?: SheetFetchContext,
+): Promise<FetchLeadsResult> {
+  const params: Record<string, string> = withSpreadsheetParams({ all: '0' }, ctx);
   if (gid) {
     params.gid = gid;
   } else if (sheetName) {
@@ -364,11 +392,16 @@ async function fetchSingleTab(gid?: string, sheetName?: string): Promise<FetchLe
     result.tabs?.map((tab) => tab.sheet).filter((name): name is string => !!name) ??
     (leads[0]?.sheetName ? [leads[0].sheetName] : []);
 
-  return { leads, sheetHeaders, tabsLoaded };
+  return {
+    leads,
+    sheetHeaders,
+    tabsLoaded,
+    spreadsheetId: ctx?.spreadsheetId,
+  };
 }
 
-async function fetchAllTabsCombined(): Promise<FetchLeadsResult> {
-  const allUrl = buildUrl('leads', { all: '1' });
+async function fetchAllTabsCombined(ctx?: SheetFetchContext): Promise<FetchLeadsResult> {
+  const allUrl = buildUrl('leads', withSpreadsheetParams({ all: '1' }, ctx));
   if (!allUrl) {
     throw new Error('Webhook URL is missing.');
   }
@@ -384,13 +417,15 @@ async function fetchAllTabsCombined(): Promise<FetchLeadsResult> {
     sheetHeaders: result.headers?.filter((header) => !!header.trim()) ?? [],
     tabsLoaded:
       result.tabs?.map((tab) => tab.sheet).filter((name): name is string => !!name) ?? [],
+    spreadsheetId: ctx?.spreadsheetId,
   };
 }
 
 async function fetchAllTabsInParallel(
   onProgress?: LeadsProgressCallback,
+  ctx?: SheetFetchContext,
 ): Promise<FetchLeadsResult> {
-  const tabsUrl = buildUrl('tabs');
+  const tabsUrl = buildUrl('tabs', withSpreadsheetParams({}, ctx));
   if (!tabsUrl) {
     throw new Error('Webhook URL is missing.');
   }
@@ -403,7 +438,12 @@ async function fetchAllTabsInParallel(
 
     const tabs = listed.tabs ?? [];
     if (tabs.length === 0) {
-      return { leads: [], sheetHeaders: [], tabsLoaded: [] };
+      return {
+        leads: [],
+        sheetHeaders: [],
+        tabsLoaded: [],
+        spreadsheetId: ctx?.spreadsheetId,
+      };
     }
 
     // Load tabs one-by-one and report progress so UI can update without freezing
@@ -416,7 +456,7 @@ async function fetchAllTabsInParallel(
         continue;
       }
       try {
-        const part = await fetchSingleTab(tab.gid, tab.sheet);
+        const part = await fetchSingleTab(tab.gid, tab.sheet, ctx);
         allLeads.push(...part.leads);
         headerParts.push(part.sheetHeaders);
         tabsLoaded.push(...part.tabsLoaded);
@@ -424,6 +464,7 @@ async function fetchAllTabsInParallel(
           leads: [...allLeads],
           sheetHeaders: mergeHeaders(headerParts),
           tabsLoaded: [...tabsLoaded],
+          spreadsheetId: ctx?.spreadsheetId,
           loadedCount: allLeads.length,
         });
         // Yield to JS thread between tabs
@@ -434,7 +475,7 @@ async function fetchAllTabsInParallel(
     }
 
     if (allLeads.length === 0) {
-      return fetchAllTabsCombined();
+      return fetchAllTabsCombined(ctx);
     }
 
     const sheetHeaders = mergeHeaders(headerParts);
@@ -446,10 +487,37 @@ async function fetchAllTabsInParallel(
       leads: allLeads,
       sheetHeaders,
       tabsLoaded: tabsLoaded.filter((name, index, arr) => name && arr.indexOf(name) === index),
+      spreadsheetId: ctx?.spreadsheetId,
     };
   } catch {
-    return fetchAllTabsCombined();
+    return fetchAllTabsCombined(ctx);
   }
+}
+
+async function resolveFetchContext(): Promise<{
+  ctx: SheetFetchContext;
+  sheetConfig: AdminSheetConfig | null;
+}> {
+  let sheetConfig: AdminSheetConfig | null = null;
+
+  try {
+    sheetConfig = await resolveActiveSheetConfig();
+  } catch (error) {
+    console.warn('[Leads] Could not read active sheet from Firebase', error);
+  }
+
+  const fromFirebase = sheetConfig?.sheet_link_id
+    ? extractSpreadsheetId(sheetConfig.sheet_link_id)
+    : '';
+  const fromEnv = extractSpreadsheetId(
+    process.env.EXPO_PUBLIC_GOOGLE_SHEETS_SPREADSHEET_ID?.trim() ?? '',
+  );
+  const spreadsheetId = fromFirebase || fromEnv || undefined;
+
+  return {
+    ctx: { spreadsheetId },
+    sheetConfig,
+  };
 }
 
 let inFlightFetch: Promise<FetchLeadsResult> | null = null;
@@ -479,17 +547,34 @@ export async function fetchLeadsFromGoogleSheet(
   }
 
   const run = async () => {
+    const { ctx, sheetConfig } = await resolveFetchContext();
     const gid = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_LEADS_GID?.trim();
     const sheetName = process.env.EXPO_PUBLIC_GOOGLE_SHEETS_LEADS_SHEET_NAME?.trim();
+    const sheetHeading = sheetConfig?.heading;
+
+    const reportProgress: LeadsProgressCallback | undefined = onProgress
+      ? (partial) =>
+          onProgress({
+            ...partial,
+            spreadsheetId: ctx.spreadsheetId,
+            sheetHeading,
+          })
+      : undefined;
 
     let result: FetchLeadsResult;
 
     if (gid || sheetName) {
-      result = await fetchSingleTab(gid, sheetName);
-      onProgress?.({ ...result, loadedCount: result.leads.length });
+      result = await fetchSingleTab(gid, sheetName, ctx);
+      reportProgress?.({ ...result, loadedCount: result.leads.length });
     } else {
-      result = await fetchAllTabsInParallel(onProgress);
+      result = await fetchAllTabsInParallel(reportProgress, ctx);
     }
+
+    result = {
+      ...result,
+      spreadsheetId: ctx.spreadsheetId,
+      sheetHeading,
+    };
 
     // Keep local cache in sync so counts stay fresh after pull-to-refresh.
     // Skip only when the payload is huge (can freeze AsyncStorage on some devices).
