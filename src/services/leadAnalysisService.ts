@@ -82,6 +82,77 @@ function getCallsForLeadFromIndex(
   return callIndex.get(lead.normalizedPhone) ?? [];
 }
 
+function callInDateRange(call: StoredCallRecord, range: { from: number | null; to: number | null }): boolean {
+  if (range.from != null && call.timestamp < range.from) {
+    return false;
+  }
+  if (range.to != null && call.timestamp > range.to) {
+    return false;
+  }
+  return true;
+}
+
+function buildLeadAnalysisFromCalls(
+  lead: SheetLead,
+  matchedCalls: StoredCallRecord[],
+): LeadWithAnalysis {
+  const sortedCalls = [...matchedCalls].sort((a, b) => b.timestamp - a.timestamp);
+  const incomingCalls = sortedCalls.filter(isIncomingCall);
+  const outgoingCalls = sortedCalls.filter(isOutgoingCall);
+  const connectedCalls = sortedCalls.filter(isConnectedCall);
+  const missedCalls = sortedCalls.filter((call) => call.callType === 'MISSED');
+  const lastCall = sortedCalls[0] ?? null;
+
+  return {
+    ...lead,
+    status: getLeadStatus(sortedCalls),
+    callCount: sortedCalls.length,
+    incomingCallCount: incomingCalls.length,
+    incomingDurationSeconds: incomingCalls.reduce(
+      (total, call) => total + call.durationSeconds,
+      0,
+    ),
+    outgoingCallCount: outgoingCalls.length,
+    outgoingDurationSeconds: outgoingCalls.reduce(
+      (total, call) => total + call.durationSeconds,
+      0,
+    ),
+    connectedCount: connectedCalls.length,
+    missedCount: missedCalls.length,
+    totalDurationSeconds: sortedCalls.reduce(
+      (total, call) => total + call.durationSeconds,
+      0,
+    ),
+    lastCalledAt: lastCall?.timestamp ?? null,
+    lastCallType: lastCall?.callType ?? null,
+    isDuplicate: false,
+  };
+}
+
+/**
+ * Recalculate each lead's call metrics using only calls inside the date range.
+ * Leads with no calls in-range become not_called (caller can filter them out).
+ */
+export function scopeLeadsToCallDateRange(
+  leads: LeadWithAnalysis[],
+  calls: StoredCallRecord[],
+  range: { from: number | null; to: number | null },
+): LeadWithAnalysis[] {
+  const hasRange = range.from != null || range.to != null;
+  if (!hasRange) {
+    return leads;
+  }
+
+  const rangedCalls = calls.filter((call) => callInDateRange(call, range));
+  const callIndex = buildCallIndex(rangedCalls);
+
+  return leads
+    .filter((lead) => !lead.isDuplicate)
+    .map((lead) =>
+      buildLeadAnalysisFromCalls(lead, getCallsForLeadFromIndex(lead, callIndex)),
+    );
+}
+
 function buildSummary(
   totalRows: number,
   uniqueLeads: LeadWithAnalysis[],
@@ -202,36 +273,7 @@ export function analyzeLeads(
 
   const analyzedLeads: LeadWithAnalysis[] = uniqueLeads.map((lead) => {
     const matchedCalls = getCallsForLeadFromIndex(lead, callIndex);
-    const incomingCalls = matchedCalls.filter(isIncomingCall);
-    const outgoingCalls = matchedCalls.filter(isOutgoingCall);
-    const connectedCalls = matchedCalls.filter(isConnectedCall);
-    const missedCalls = matchedCalls.filter((call) => call.callType === 'MISSED');
-    const lastCall = matchedCalls[0] ?? null;
-
-    return {
-      ...lead,
-      status: getLeadStatus(matchedCalls),
-      callCount: matchedCalls.length,
-      incomingCallCount: incomingCalls.length,
-      incomingDurationSeconds: incomingCalls.reduce(
-        (total, call) => total + call.durationSeconds,
-        0,
-      ),
-      outgoingCallCount: outgoingCalls.length,
-      outgoingDurationSeconds: outgoingCalls.reduce(
-        (total, call) => total + call.durationSeconds,
-        0,
-      ),
-      connectedCount: connectedCalls.length,
-      missedCount: missedCalls.length,
-      totalDurationSeconds: matchedCalls.reduce(
-        (total, call) => total + call.durationSeconds,
-        0,
-      ),
-      lastCalledAt: lastCall?.timestamp ?? null,
-      lastCallType: lastCall?.callType ?? null,
-      isDuplicate: false,
-    };
+    return buildLeadAnalysisFromCalls(lead, matchedCalls);
   });
 
   const summary = buildSummary(sheetLeads.length, analyzedLeads, duplicateRows);

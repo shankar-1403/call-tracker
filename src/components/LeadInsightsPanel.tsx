@@ -1,3 +1,6 @@
+import { exportLeadAnalysisToExcel } from '@/services/exportService';
+import { scopeLeadsToCallDateRange } from '@/services/leadAnalysisService';
+import type { StoredCallRecord } from '@/types/call';
 import type { LeadCallStatus, LeadWithAnalysis } from '@/types/lead';
 import {
   collectSheetStatusOptions,
@@ -12,6 +15,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Dimensions,
   Modal,
   Pressable,
@@ -139,6 +143,8 @@ function buildDetailRows(lead: LeadWithAnalysis): Array<{ field: string; value: 
 
 interface LeadInsightsPanelProps {
   leads: LeadWithAnalysis[];
+  calls?: StoredCallRecord[];
+  sheetHeaders?: string[];
 }
 
 function getRawField(lead: LeadWithAnalysis, header: string): string {
@@ -203,7 +209,11 @@ function parseDateInput(value: string, endOfDate = false): number | null {
   return date.getTime();
 }
 
-export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
+export function LeadInsightsPanel({
+  leads,
+  calls = [],
+  sheetHeaders = [],
+}: LeadInsightsPanelProps) {
   const [sheetStatusFilter, setSheetStatusFilter] = useState<string>('all');
   const [datePreset, setDatePreset] = useState<DateRangePreset>('all');
   const today = new Date();
@@ -224,6 +234,7 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
   }));
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [listLimit, setListLimit] = useState(30);
+  const [isExporting, setIsExporting] = useState(false);
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [dropdownAnchor, setDropdownAnchor] = useState({
     x: 0,
@@ -235,7 +246,30 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
   });
   const dropdownTriggerRef = useRef<View>(null);
 
-  const sheetStatuses = useMemo(() => collectSheetStatusOptions(leads), [leads]);
+  const dateRange = useMemo(
+    () => (datePreset === 'custom' ? customDateRange : getDateRangePreset(datePreset)),
+    [datePreset, customDateRange],
+  );
+
+  // Recalculate Times Called / Incoming / Outgoing / Duration for the selected date range
+  const dateScopedLeads = useMemo(() => {
+    const hasRange = dateRange.from != null || dateRange.to != null;
+    if (!hasRange || calls.length === 0) {
+      return leads;
+    }
+    return scopeLeadsToCallDateRange(leads, calls, dateRange);
+  }, [leads, calls, dateRange]);
+
+  // Status options from dialed leads in the current date scope
+  const calledLeads = useMemo(
+    () => dateScopedLeads.filter((lead) => !lead.isDuplicate && lead.status !== 'not_called'),
+    [dateScopedLeads],
+  );
+
+  const sheetStatuses = useMemo(
+    () => collectSheetStatusOptions(calledLeads),
+    [calledLeads],
+  );
 
   const sheetStatusOptions = useMemo(
     () => [
@@ -257,10 +291,6 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
     }
   }, [sheetStatuses, sheetStatusFilter]);
 
-  const dateRange = useMemo(
-    () => (datePreset === 'custom' ? customDateRange : getDateRangePreset(datePreset)),
-    [datePreset, customDateRange],
-  );
   const selectedSheetStatusLabel =
     sheetStatusOptions.find((item) => item.id === sheetStatusFilter)?.label ??
     'All statuses';
@@ -332,9 +362,16 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
     setListLimit(30);
   };
 
-  // Details + charts follow sheet Status (+ date), not call result
+  // 1) Date-scoped call metrics on each lead row  2) dialed in range  3) sheet Status
   const filtered = useMemo(() => {
-    const rows = filterLeadsForInsights(leads, 'all', dateRange, sheetStatusFilter);
+    const allTimeRange: DateRange = { preset: 'all', from: null, to: null };
+    // Date already applied via scopeLeadsToCallDateRange (metrics + which leads have calls)
+    const rows = filterLeadsForInsights(
+      dateScopedLeads,
+      'called',
+      allTimeRange,
+      sheetStatusFilter,
+    );
     return [...rows].sort((left, right) => {
       const leftStatus = getLeadSheetStatus(left);
       const rightStatus = getLeadSheetStatus(right);
@@ -343,7 +380,7 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
       }
       return left.name.localeCompare(right.name);
     });
-  }, [leads, dateRange, sheetStatusFilter]);
+  }, [dateScopedLeads, sheetStatusFilter]);
 
   const sheetBreakdown = useMemo(() => {
     const counts = new Map<string, number>();
@@ -381,12 +418,64 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
   const listTitle =
     sheetStatusFilter === 'all' ? 'Lead details by sheet status' : `${sheetStatusFilter}`;
 
+  const filterLabel = useMemo(() => {
+    let dateLabel: string;
+    if (datePreset === 'custom' && dateRange.from != null && dateRange.to != null) {
+      dateLabel = `Custom ${formatDateInput(new Date(dateRange.from))} - ${formatDateInput(new Date(dateRange.to))}`;
+    } else {
+      dateLabel =
+        DATE_PRESETS.find((item) => item.id === datePreset)?.label ?? datePreset;
+    }
+    const statusLabel =
+      sheetStatusFilter === 'all' ? 'All statuses' : sheetStatusFilter;
+    return `${dateLabel} | ${statusLabel}`;
+  }, [datePreset, dateRange, sheetStatusFilter]);
+
+  const handleExport = async () => {
+    if (filtered.length === 0) {
+      Alert.alert('Nothing to export', 'No dialed leads match the current filters.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      await exportLeadAnalysisToExcel({
+        leads: filtered,
+        sheetHeaders,
+        filterLabel,
+      });
+    } catch (exportError) {
+      Alert.alert(
+        'Export failed',
+        exportError instanceof Error ? exportError.message : 'Failed to export analysis.',
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <View>
-      <Text style={styles.sectionTitle}>Insights</Text>
-      <Text style={styles.subtitle}>
-        Lead details follow sheet Status. Use date range and status dropdown to filter.
-      </Text>
+      <View style={styles.headerRow}>
+        <View style={styles.headerText}>
+          <Text style={styles.sectionTitle}>Insights</Text>
+          <Text style={styles.subtitle}>
+            Call counts and duration on each lead follow the selected date range, then sheet
+            Status.
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.exportButton, isExporting && styles.exportButtonDisabled]}
+          onPress={() => {
+            void handleExport();
+          }}
+          disabled={isExporting}
+          activeOpacity={0.85}>
+          <Text style={styles.exportButtonText}>
+            {isExporting ? 'Exporting...' : 'Export Excel'}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <Text style={styles.filterLabel}>Date range</Text>
       <View style={styles.chipRow}>
@@ -715,6 +804,16 @@ export function LeadInsightsPanel({ leads }: LeadInsightsPanelProps) {
 }
 
 const styles = StyleSheet.create({
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 4,
+  },
+  headerText: {
+    flex: 1,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -725,6 +824,21 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
     marginBottom: 14,
+  },
+  exportButton: {
+    backgroundColor: '#074C70',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignSelf: 'flex-start',
+  },
+  exportButtonDisabled: {
+    opacity: 0.6,
+  },
+  exportButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
   filterLabel: {
     fontSize: 12,

@@ -83,18 +83,17 @@ export default function Dashboard() {
 
   const {
     analysis,
+    calls,
     filteredLeads,
     filter,
     setFilter,
     isLoading: isLeadLoading,
     isRefreshingLeads,
-    isExporting,
     error: leadError,
     statusMessage: leadStatusMessage,
     loadProgress,
     leadsConfigured,
     refreshAnalysis,
-    exportAnalysis,
   } = useLeadAnalysis(isAndroid && permissionsGranted);
 
   const [leadPageSize, setLeadPageSize] = useState(40);
@@ -228,7 +227,13 @@ export default function Dashboard() {
             {isLeadLoading && !analysis ? (
               <ActivityIndicator color="#2E5CFF" style={styles.loader} />
             ) : null}
-            {analysis ? <LeadInsightsPanel leads={analysis.leads} /> : null}
+            {analysis ? (
+              <LeadInsightsPanel
+                leads={analysis.leads}
+                calls={calls}
+                sheetHeaders={analysis.sheetHeaders}
+              />
+            ) : null}
             {!isLeadLoading && !analysis ? (
               <Text style={styles.emptyText}>Load leads to see insights.</Text>
             ) : null}
@@ -239,17 +244,6 @@ export default function Dashboard() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Lead Analysis</Text>
-              <TouchableOpacity
-                style={[styles.exportButton, isExporting && styles.buttonDisabled]}
-                onPress={() => {
-                  void exportAnalysis();
-                }}
-                disabled={isExporting}
-                activeOpacity={0.85}>
-                <Text style={styles.exportButtonText}>
-                  {isExporting ? 'Exporting...' : 'Export Excel'}
-                </Text>
-              </TouchableOpacity>
             </View>
 
             <View style={styles.statsGrid}>

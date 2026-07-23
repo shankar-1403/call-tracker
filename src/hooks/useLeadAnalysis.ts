@@ -3,13 +3,13 @@ import {
   filterLeads,
 } from '@/services/leadAnalysisService';
 import { loadCallHistory } from '@/services/callLogService';
-import { exportLeadAnalysisToExcel } from '@/services/exportService';
 import {
   fetchLeadsFromGoogleSheet,
   isLeadsSheetConfigured,
   loadLeadsCache,
 } from '@/services/leadsSheetService';
 import { resolveActiveSheetConfig } from '@/services/sheetsConfigService';
+import type { StoredCallRecord } from '@/types/call';
 import type { LeadAnalysisResult, LeadFilter, LeadWithAnalysis } from '@/types/lead';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -26,14 +26,14 @@ function waitForIdle(): Promise<void> {
 
 export function useLeadAnalysis(enabled: boolean) {
   const [analysis, setAnalysis] = useState<LeadAnalysisResult | null>(null);
+  const [calls, setCalls] = useState<StoredCallRecord[]>([]);
   const [filter, setFilter] = useState<LeadFilter>('called');
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [loadProgress, setLoadProgress] = useState<number | null>(null);
-  const callsRef = useRef<Awaited<ReturnType<typeof loadCallHistory>> | null>(null);
+  const callsRef = useRef<StoredCallRecord[] | null>(null);
 
   const applyLeads = useCallback(
     async (
@@ -45,7 +45,8 @@ export function useLeadAnalysis(enabled: boolean) {
       sheetHeading?: string,
     ) => {
       if (!callsRef.current) {
-        callsRef.current = await loadCallHistory(300);
+        callsRef.current = await loadCallHistory(500);
+        setCalls(callsRef.current);
       }
 
       await waitForIdle();
@@ -84,6 +85,7 @@ export function useLeadAnalysis(enabled: boolean) {
     setLoadProgress(0);
     setStatusMessage('Refreshing leads from Google Sheet…');
     callsRef.current = null;
+    setCalls([]);
 
     try {
       const result = await fetchLeadsFromGoogleSheet(
@@ -225,43 +227,18 @@ export function useLeadAnalysis(enabled: boolean) {
     return filterLeads(analysis.leads, filter);
   }, [analysis, filter]);
 
-  const exportAnalysis = useCallback(async () => {
-    if (!analysis) {
-      setError('Load lead analysis before exporting.');
-      return;
-    }
-
-    setIsExporting(true);
-    setError(null);
-
-    try {
-      await exportLeadAnalysisToExcel(analysis);
-      setStatusMessage(
-        'Exported dialed numbers only (matched to lead sheet). Open the CSV in Excel.',
-      );
-    } catch (exportError) {
-      console.error('[LeadAnalysis] Export failed', exportError);
-      setError(
-        exportError instanceof Error ? exportError.message : 'Failed to export analysis.',
-      );
-    } finally {
-      setIsExporting(false);
-    }
-  }, [analysis]);
-
   return {
     analysis,
+    calls,
     filteredLeads,
     filter,
     setFilter,
     isLoading,
     isRefreshingLeads: isRefreshing,
-    isExporting,
     error,
     statusMessage,
     loadProgress,
     leadsConfigured: isLeadsSheetConfigured(),
     refreshAnalysis,
-    exportAnalysis,
   };
 }

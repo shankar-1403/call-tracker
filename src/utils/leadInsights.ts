@@ -179,12 +179,16 @@ export function filterLeadsForInsights(
   dateRange: DateRange,
   sheetStatus: string = 'all',
 ): LeadWithAnalysis[] {
-  return leads.filter(
-    (lead) =>
-      leadMatchesStatusFilter(lead, statusFilter) &&
-      leadMatchesDateRange(lead, dateRange) &&
-      leadMatchesSheetStatus(lead, sheetStatus),
-  );
+  // Order: call mapping → date → sheet Status
+  return leads.filter((lead) => {
+    if (!leadMatchesStatusFilter(lead, statusFilter)) {
+      return false;
+    }
+    if (!leadMatchesDateRange(lead, dateRange)) {
+      return false;
+    }
+    return leadMatchesSheetStatus(lead, sheetStatus);
+  });
 }
 
 export interface StatusBreakdown {
